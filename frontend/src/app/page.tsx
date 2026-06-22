@@ -1,28 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useWriteContract, useReadContract } from 'wagmi'
-import { parseUnits, formatUnits } from 'viem'
-import { contractABI, contractAddress } from '@/lib/contract'
-
-interface Campaign {
-  id: number
-  creator: string
-  tweetUrl: string
-  taskType: number
-  rewardPerUser: bigint
-  maxParticipants: number
-  participants: number
-  totalReward: bigint
-  protocolFee: bigint
-  status: number
-}
-
-const TASK_TYPES = ['👍 Like', '🔄 Retweet', '💬 Comment']
+import { useAccount } from 'wagmi'
+import { TASK_TYPES, styles } from '@/lib/constants'
+import { useCampaignCount, useCampaignActions } from '@/hooks/useCampaignContract'
+import { FormInput } from '@/components/FormInput'
+import { CampaignCard } from '@/components/CampaignCard'
+import { CostSummary } from '@/components/CostSummary'
 
 export default function Home() {
-  const { address, isConnected } = useAccount()
+  const { isConnected } = useAccount()
   const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my'>('browse')
 
   // Form state
@@ -31,40 +19,13 @@ export default function Home() {
   const [rewardPerUser, setRewardPerUser] = useState('')
   const [maxParticipants, setMaxParticipants] = useState('')
 
-  // Contract write
-  const { writeContract } = useWriteContract()
-
-  // Campaign count
-  const { data: campaignCount } = useReadContract({
-    address: contractAddress,
-    abi: contractABI,
-    functionName: 'campaignCounter',
-  })
+  // Contract hooks
+  const { data: campaignCount } = useCampaignCount()
+  const { createCampaign, claimReward } = useCampaignActions()
 
   const handleCreate = () => {
     if (!tweetUrl || !rewardPerUser || !maxParticipants) return
-    
-    const reward = parseUnits(rewardPerUser, 6) // USDC 6 decimals
-    const max = BigInt(maxParticipants)
-    const totalReward = reward * max
-    const protocolFee = (totalReward * BigInt(10)) / BigInt(100)
-    const totalAmount = totalReward + protocolFee
-
-    writeContract({
-      address: contractAddress,
-      abi: contractABI,
-      functionName: 'createCampaign',
-      args: [tweetUrl, taskType, reward, max],
-    })
-  }
-
-  const handleClaim = (campaignId: number) => {
-    writeContract({
-      address: contractAddress,
-      abi: contractABI,
-      functionName: 'claimReward',
-      args: [BigInt(campaignId)],
-    })
+    createCampaign(tweetUrl, taskType, rewardPerUser, maxParticipants)
   }
 
   return (
@@ -100,25 +61,9 @@ export default function Home() {
             <h2 className="text-2xl font-bold mb-6">Active Campaigns</h2>
             <p className="text-gray-400 mb-4">Total campaigns: {campaignCount?.toString() || '0'}</p>
             
-            {/* Mock campaign list - replace with contract fetch */}
             <div className="grid gap-4">
               {[1, 2, 3].map((id) => (
-                <div key={id} className="border border-gray-800 rounded-xl p-6 bg-gray-900/50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs">
-                        {TASK_TYPES[id % 3]}
-                      </span>
-                      <p className="text-sm text-gray-400 mt-1">Campaign #{id}</p>
-                    </div>
-                    <button
-                      onClick={() => handleClaim(id)}
-                      className="px-4 py-2 rounded-lg bg-emerald-500 text-black text-sm font-bold hover:bg-emerald-400"
-                    >
-                      Claim Reward
-                    </button>
-                  </div>
-                </div>
+                <CampaignCard key={id} id={id} taskTypeIndex={id % 3} onClaim={claimReward} />
               ))}
             </div>
           </div>
@@ -128,17 +73,14 @@ export default function Home() {
         {activeTab === 'create' && (
           <div className="max-w-xl mx-auto">
             <h2 className="text-2xl font-bold mb-6">Create Campaign</h2>
-            <div className="border border-gray-800 rounded-xl p-6 bg-gray-900/50 space-y-6">
-              <div>
-                <label className="block text-sm font-medium mb-2">Tweet URL</label>
-                <input
-                  type="url"
-                  value={tweetUrl}
-                  onChange={(e) => setTweetUrl(e.target.value)}
-                  placeholder="https://x.com/username/status/123..."
-                  className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
+            <div className={`${styles.card} space-y-6`}>
+              <FormInput
+                label="Tweet URL"
+                type="url"
+                value={tweetUrl}
+                onChange={setTweetUrl}
+                placeholder="https://x.com/username/status/123..."
+              />
               
               <div>
                 <label className="block text-sm font-medium mb-2">Task Type</label>
@@ -158,50 +100,31 @@ export default function Home() {
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Reward (USDC)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={rewardPerUser}
-                    onChange={(e) => setRewardPerUser(e.target.value)}
-                    placeholder="0.10"
-                    className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Max Participants</label>
-                  <input
-                    type="number"
-                    value={maxParticipants}
-                    onChange={(e) => setMaxParticipants(e.target.value)}
-                    placeholder="100"
-                    className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
+                <FormInput
+                  label="Reward (USDC)"
+                  type="number"
+                  step="0.01"
+                  value={rewardPerUser}
+                  onChange={setRewardPerUser}
+                  placeholder="0.10"
+                />
+                <FormInput
+                  label="Max Participants"
+                  type="number"
+                  value={maxParticipants}
+                  onChange={setMaxParticipants}
+                  placeholder="100"
+                />
               </div>
               
               {rewardPerUser && maxParticipants && (
-                <div className="p-4 rounded-lg bg-gray-800/50 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Reward Pool</span>
-                    <span>{(parseFloat(rewardPerUser) * parseInt(maxParticipants)).toFixed(2)} USDC</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Protocol Fee (10%)</span>
-                    <span className="text-yellow-400">{(parseFloat(rewardPerUser) * parseInt(maxParticipants) * 0.1).toFixed(2)} USDC</span>
-                  </div>
-                  <div className="border-t border-gray-700 pt-2 flex justify-between text-sm font-bold">
-                    <span className="text-gray-400">Total</span>
-                    <span className="text-emerald-400">{(parseFloat(rewardPerUser) * parseInt(maxParticipants) * 1.1).toFixed(2)} USDC</span>
-                  </div>
-                </div>
+                <CostSummary rewardPerUser={rewardPerUser} maxParticipants={maxParticipants} />
               )}
               
               <button
                 onClick={handleCreate}
                 disabled={!isConnected}
-                className="w-full py-3 rounded-lg bg-emerald-500 text-black font-bold hover:bg-emerald-400 disabled:opacity-50"
+                className={styles.buttonPrimaryFull}
               >
                 {isConnected ? 'Create & Deposit USDC' : 'Connect Wallet'}
               </button>
