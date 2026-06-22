@@ -1,5 +1,14 @@
 // Base Sepolia / Base Mainnet Contract Address
-export const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}` || '0x0000000000000000000000000000000000000000'
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
+
+export const contractAddress: `0x${string}` = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`) || ZERO_ADDRESS
+
+if (contractAddress === ZERO_ADDRESS) {
+  console.warn(
+    '[FCFS] NEXT_PUBLIC_CONTRACT_ADDRESS is not set — falling back to zero address. ' +
+    'Contract interactions will fail. Set it in your .env.local file.'
+  )
+}
 
 export const contractABI = [
   {
