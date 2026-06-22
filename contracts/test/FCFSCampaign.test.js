@@ -285,7 +285,7 @@ describe("FCFSCampaign", function () {
       await campaign.connect(worker2).claimReward(0);
       await campaign.connect(worker3).claimReward(0);
 
-      const [, , , , extra] = await ethers.getSigners();
+      const [, , , , , extra] = await ethers.getSigners();
       await expect(
         campaign.connect(extra).claimReward(0)
       ).to.be.revertedWith("Not active");
