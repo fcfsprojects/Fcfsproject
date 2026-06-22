@@ -78,6 +78,7 @@ contract FCFSCampaign is ReentrancyGuard, Ownable {
     }
     
     constructor(address _usdc) Ownable(msg.sender) {
+        require(_usdc != address(0), "Invalid USDC address");
         usdc = IERC20(_usdc);
     }
     

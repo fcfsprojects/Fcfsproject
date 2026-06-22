@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useWriteContract, useReadContract } from 'wagmi'
+import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, formatUnits } from 'viem'
 import { contractABI, contractAddress } from '@/lib/contract'
 
@@ -19,11 +19,32 @@ interface Campaign {
   status: number
 }
 
+type StatusMessage = {
+  type: 'success' | 'error' | 'pending'
+  text: string
+}
+
 const TASK_TYPES = ['👍 Like', '🔄 Retweet', '💬 Comment']
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.message.includes('User rejected')) return 'Transaction rejected by user.'
+    if (error.message.includes('insufficient funds')) return 'Insufficient funds for transaction.'
+    if (error.message.includes('Already claimed')) return 'You have already claimed this reward.'
+    if (error.message.includes('Not active')) return 'This campaign is no longer active.'
+    if (error.message.includes('Campaign expired')) return 'This campaign has expired.'
+    if (error.message.includes('Full')) return 'This campaign has reached its participant limit.'
+    if (error.message.includes('Creator cannot claim')) return 'Campaign creators cannot claim their own rewards.'
+    if (error.message.includes('ERC20: insufficient allowance')) return 'USDC allowance insufficient. Please approve the contract first.'
+    return error.message.length > 200 ? error.message.slice(0, 200) + '...' : error.message
+  }
+  return 'An unexpected error occurred.'
+}
 
 export default function Home() {
   const { address, isConnected } = useAccount()
   const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my'>('browse')
+  const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null)
 
   // Form state
   const [tweetUrl, setTweetUrl] = useState('')
@@ -32,23 +53,88 @@ export default function Home() {
   const [maxParticipants, setMaxParticipants] = useState('')
 
   // Contract write
-  const { writeContract } = useWriteContract()
+  const { writeContract, data: txHash, isPending: isWritePending, error: writeError, reset: resetWrite } = useWriteContract()
+
+  // Wait for transaction confirmation
+  const { isLoading: isConfirming, isSuccess: isConfirmed, error: confirmError } = useWaitForTransactionReceipt({ hash: txHash })
+
+  // Surface write errors to the user
+  useEffect(() => {
+    if (writeError) {
+      setStatusMessage({ type: 'error', text: extractErrorMessage(writeError) })
+    }
+  }, [writeError])
+
+  // Surface confirmation errors to the user
+  useEffect(() => {
+    if (confirmError) {
+      setStatusMessage({ type: 'error', text: `Transaction failed on-chain: ${extractErrorMessage(confirmError)}` })
+    }
+  }, [confirmError])
+
+  // Surface successful confirmations
+  useEffect(() => {
+    if (isConfirmed) {
+      setStatusMessage({ type: 'success', text: 'Transaction confirmed!' })
+    }
+  }, [isConfirmed])
+
+  // Show pending state while confirming
+  useEffect(() => {
+    if (isConfirming) {
+      setStatusMessage({ type: 'pending', text: 'Waiting for transaction confirmation...' })
+    }
+  }, [isConfirming])
+
+  // Auto-dismiss success messages after 5 seconds
+  useEffect(() => {
+    if (statusMessage?.type === 'success') {
+      const timer = setTimeout(() => setStatusMessage(null), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [statusMessage])
 
   // Campaign count
-  const { data: campaignCount } = useReadContract({
+  const { data: campaignCount, error: campaignCountError } = useReadContract({
     address: contractAddress,
     abi: contractABI,
     functionName: 'campaignCounter',
   })
 
-  const handleCreate = () => {
-    if (!tweetUrl || !rewardPerUser || !maxParticipants) return
-    
-    const reward = parseUnits(rewardPerUser, 6) // USDC 6 decimals
-    const max = BigInt(maxParticipants)
-    const totalReward = reward * max
-    const protocolFee = (totalReward * BigInt(10)) / BigInt(100)
-    const totalAmount = totalReward + protocolFee
+  const handleCreate = useCallback(() => {
+    if (!tweetUrl || !rewardPerUser || !maxParticipants) {
+      setStatusMessage({ type: 'error', text: 'Please fill in all fields.' })
+      return
+    }
+
+    let reward: bigint
+    try {
+      reward = parseUnits(rewardPerUser, 6)
+    } catch {
+      setStatusMessage({ type: 'error', text: 'Invalid reward amount. Please enter a valid number.' })
+      return
+    }
+
+    if (reward <= 0n) {
+      setStatusMessage({ type: 'error', text: 'Reward must be greater than zero.' })
+      return
+    }
+
+    let max: bigint
+    try {
+      max = BigInt(maxParticipants)
+    } catch {
+      setStatusMessage({ type: 'error', text: 'Invalid participant count. Please enter a whole number.' })
+      return
+    }
+
+    if (max <= 0n || max > 10000n) {
+      setStatusMessage({ type: 'error', text: 'Participant count must be between 1 and 10,000.' })
+      return
+    }
+
+    resetWrite()
+    setStatusMessage({ type: 'pending', text: 'Please confirm the transaction in your wallet...' })
 
     writeContract({
       address: contractAddress,
@@ -56,16 +142,19 @@ export default function Home() {
       functionName: 'createCampaign',
       args: [tweetUrl, taskType, reward, max],
     })
-  }
+  }, [tweetUrl, rewardPerUser, maxParticipants, taskType, writeContract, resetWrite])
 
-  const handleClaim = (campaignId: number) => {
+  const handleClaim = useCallback((campaignId: number) => {
+    resetWrite()
+    setStatusMessage({ type: 'pending', text: 'Please confirm the transaction in your wallet...' })
+
     writeContract({
       address: contractAddress,
       abi: contractABI,
       functionName: 'claimReward',
       args: [BigInt(campaignId)],
     })
-  }
+  }, [writeContract, resetWrite])
 
   return (
     <div className="min-h-screen">
@@ -94,11 +183,31 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Status Banner */}
+        {statusMessage && (
+          <div
+            className={`mb-6 px-4 py-3 rounded-lg text-sm font-medium flex items-center justify-between ${
+              statusMessage.type === 'error'
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                : statusMessage.type === 'success'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+            }`}
+          >
+            <span>{statusMessage.text}</span>
+            <button onClick={() => setStatusMessage(null)} className="ml-4 opacity-70 hover:opacity-100">&times;</button>
+          </div>
+        )}
+
         {/* Browse Campaigns */}
         {activeTab === 'browse' && (
           <div>
             <h2 className="text-2xl font-bold mb-6">Active Campaigns</h2>
-            <p className="text-gray-400 mb-4">Total campaigns: {campaignCount?.toString() || '0'}</p>
+            {campaignCountError ? (
+              <p className="text-red-400 mb-4">Failed to load campaign count. Check your network connection.</p>
+            ) : (
+              <p className="text-gray-400 mb-4">Total campaigns: {campaignCount?.toString() || '0'}</p>
+            )}
             
             {/* Mock campaign list - replace with contract fetch */}
             <div className="grid gap-4">
@@ -113,9 +222,10 @@ export default function Home() {
                     </div>
                     <button
                       onClick={() => handleClaim(id)}
-                      className="px-4 py-2 rounded-lg bg-emerald-500 text-black text-sm font-bold hover:bg-emerald-400"
+                      disabled={isWritePending || isConfirming}
+                      className="px-4 py-2 rounded-lg bg-emerald-500 text-black text-sm font-bold hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Claim Reward
+                      {isWritePending || isConfirming ? 'Processing...' : 'Claim Reward'}
                     </button>
                   </div>
                 </div>
@@ -181,7 +291,7 @@ export default function Home() {
                 </div>
               </div>
               
-              {rewardPerUser && maxParticipants && (
+              {rewardPerUser && maxParticipants && !isNaN(parseFloat(rewardPerUser)) && !isNaN(parseInt(maxParticipants)) && (
                 <div className="p-4 rounded-lg bg-gray-800/50 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Reward Pool</span>
@@ -200,10 +310,16 @@ export default function Home() {
               
               <button
                 onClick={handleCreate}
-                disabled={!isConnected}
-                className="w-full py-3 rounded-lg bg-emerald-500 text-black font-bold hover:bg-emerald-400 disabled:opacity-50"
+                disabled={!isConnected || isWritePending || isConfirming}
+                className="w-full py-3 rounded-lg bg-emerald-500 text-black font-bold hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isConnected ? 'Create & Deposit USDC' : 'Connect Wallet'}
+                {!isConnected
+                  ? 'Connect Wallet'
+                  : isWritePending
+                  ? 'Confirm in Wallet...'
+                  : isConfirming
+                  ? 'Confirming Transaction...'
+                  : 'Create & Deposit USDC'}
               </button>
             </div>
           </div>
