@@ -6,9 +6,16 @@ import { WagmiProvider } from 'wagmi'
 import { base, baseSepolia } from 'wagmi/chains'
 import { useState } from 'react'
 
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+if (!projectId) {
+  throw new Error(
+    'Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID environment variable'
+  )
+}
+
 const config = getDefaultConfig({
   appName: 'FCFS Campaigns',
-  projectId: 'YOUR_WALLETCONNECT_PROJECT_ID',
+  projectId,
   chains: [baseSepolia, base],
 })
 

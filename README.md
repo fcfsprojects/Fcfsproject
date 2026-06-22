@@ -73,11 +73,12 @@ npm run dev
 
 ## Deploy ke Vercel
 
-```bash
-cd frontend
-npm i -g vercel
-vercel --prod
-```
+1. Import the repository in [Vercel](https://vercel.com/new).
+2. Set **Root Directory** to `frontend/`.
+3. Add the following **Environment Variables** in the Vercel project settings:
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS` — deployed FCFSCampaign contract address
+   - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` — WalletConnect Cloud project ID ([get one here](https://cloud.walletconnect.com/))
+4. Deploy. Vercel will auto-detect Next.js and run `next build`.
 
 ## Cara Push ke GitHub
 

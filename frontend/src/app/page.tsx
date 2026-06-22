@@ -1,28 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useWriteContract, useReadContract } from 'wagmi'
-import { parseUnits, formatUnits } from 'viem'
+import { parseUnits } from 'viem'
 import { contractABI, contractAddress } from '@/lib/contract'
-
-interface Campaign {
-  id: number
-  creator: string
-  tweetUrl: string
-  taskType: number
-  rewardPerUser: bigint
-  maxParticipants: number
-  participants: number
-  totalReward: bigint
-  protocolFee: bigint
-  status: number
-}
 
 const TASK_TYPES = ['👍 Like', '🔄 Retweet', '💬 Comment']
 
 export default function Home() {
-  const { address, isConnected } = useAccount()
+  const { isConnected } = useAccount()
   const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my'>('browse')
 
   // Form state
@@ -46,9 +33,6 @@ export default function Home() {
     
     const reward = parseUnits(rewardPerUser, 6) // USDC 6 decimals
     const max = BigInt(maxParticipants)
-    const totalReward = reward * max
-    const protocolFee = (totalReward * BigInt(10)) / BigInt(100)
-    const totalAmount = totalReward + protocolFee
 
     writeContract({
       address: contractAddress,
