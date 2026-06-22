@@ -1,0 +1,24 @@
+const hre = require("hardhat");
+
+async function main() {
+  const [deployer] = await hre.ethers.getSigners();
+  console.log("Deploying with account:", deployer.address);
+
+  // Base Sepolia USDC (or mock for testing)
+  // For Base Mainnet: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+  const USDC_ADDRESS = process.env.USDC_ADDRESS || "0x036CbD53842c5426634e7929541eC2318f152dD7"; // Base Sepolia USDC
+
+  const FCFSCampaign = await hre.ethers.getContractFactory("FCFSCampaign");
+  const campaign = await FCFSCampaign.deploy(USDC_ADDRESS);
+
+  await campaign.waitForDeployment();
+
+  const address = await campaign.getAddress();
+  console.log("FCFSCampaign deployed to:", address);
+  console.log("USDC used:", USDC_ADDRESS);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

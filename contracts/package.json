@@ -1,0 +1,19 @@
+{
+  "name": "fcfs-contracts",
+  "version": "1.0.0",
+  "description": "FCFS Campaign Smart Contracts",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:sepolia": "hardhat run deploy.js --network baseSepolia",
+    "deploy:base": "hardhat run deploy.js --network base",
+    "verify": "hardhat verify"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0"
+  }
+}
