@@ -20,7 +20,10 @@ export const contractABI = [
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "uint256", "name": "_campaignId", "type": "uint256"}],
+    "inputs": [
+      {"internalType": "uint256", "name": "_campaignId", "type": "uint256"},
+      {"internalType": "bytes", "name": "_signature", "type": "bytes"}
+    ],
     "name": "claimReward",
     "outputs": [],
     "stateMutability": "nonpayable",
