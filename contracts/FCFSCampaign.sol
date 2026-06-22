@@ -5,15 +5,20 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
  * @title FCFSCampaign
  * @dev First Come First Serve - Micro-bounty platform for social engagement
  * Users create campaigns (like/retweet/comment) and deposit USDC as reward pool.
  * Workers complete tasks off-chain and claim rewards on-chain.
+ * Claims require a backend signature to verify task completion.
  */
 contract FCFSCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
 
     IERC20 public usdc;
     
@@ -22,6 +27,8 @@ contract FCFSCampaign is ReentrancyGuard, Ownable {
     
     uint256 public campaignCounter;
     uint256 public totalFeesCollected;
+    
+    address public verifier;
     
     enum TaskType { LIKE, RETWEET, COMMENT }
     enum CampaignStatus { ACTIVE, COMPLETED, CANCELLED }
@@ -77,8 +84,19 @@ contract FCFSCampaign is ReentrancyGuard, Ownable {
         _;
     }
     
-    constructor(address _usdc) Ownable(msg.sender) {
+    constructor(address _usdc, address _verifier) Ownable(msg.sender) {
+        require(_usdc != address(0), "Invalid USDC address");
+        require(_verifier != address(0), "Invalid verifier address");
         usdc = IERC20(_usdc);
+        verifier = _verifier;
+    }
+    
+    /**
+     * @notice Update the verifier address (owner only)
+     */
+    function setVerifier(address _verifier) external onlyOwner {
+        require(_verifier != address(0), "Invalid verifier address");
+        verifier = _verifier;
     }
     
     /**
@@ -139,15 +157,23 @@ contract FCFSCampaign is ReentrancyGuard, Ownable {
     
     /**
      * @notice Claim reward for completing a campaign task.
-     * In production, this should include verification (oracle/signature).
+     * Requires a valid signature from the verifier proving task completion.
+     * @param _campaignId The campaign to claim from
+     * @param _signature Backend signature authorizing the claim
      */
-    function claimReward(uint256 _campaignId) external nonReentrant validCampaign(_campaignId) {
+    function claimReward(uint256 _campaignId, bytes calldata _signature) external nonReentrant validCampaign(_campaignId) {
         Campaign storage campaign = campaigns[_campaignId];
         
         require(block.timestamp < campaign.expiresAt, "Campaign expired");
         require(campaign.participants < campaign.maxParticipants, "Full");
         require(!hasClaimed[_campaignId][msg.sender], "Already claimed");
         require(msg.sender != campaign.creator, "Creator cannot claim");
+        
+        // Verify signature from backend that task was completed
+        bytes32 messageHash = keccak256(abi.encodePacked(_campaignId, msg.sender));
+        bytes32 ethSignedHash = messageHash.toEthSignedMessageHash();
+        address signer = ethSignedHash.recover(_signature);
+        require(signer == verifier, "Invalid claim signature");
         
         hasClaimed[_campaignId][msg.sender] = true;
         participantsList[_campaignId].push(msg.sender);

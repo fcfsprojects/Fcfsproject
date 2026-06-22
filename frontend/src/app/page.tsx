@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useWriteContract, useReadContract } from 'wagmi'
-import { parseUnits, formatUnits } from 'viem'
+import { parseUnits } from 'viem'
 import { contractABI, contractAddress } from '@/lib/contract'
 
 interface Campaign {
@@ -21,6 +21,12 @@ interface Campaign {
 
 const TASK_TYPES = ['👍 Like', '🔄 Retweet', '💬 Comment']
 
+const TWEET_URL_PATTERN = /^https:\/\/(x\.com|twitter\.com)\/[a-zA-Z0-9_]+\/status\/\d+/
+
+function isValidTweetUrl(url: string): boolean {
+  return TWEET_URL_PATTERN.test(url)
+}
+
 export default function Home() {
   const { address, isConnected } = useAccount()
   const [activeTab, setActiveTab] = useState<'browse' | 'create' | 'my'>('browse')
@@ -30,6 +36,7 @@ export default function Home() {
   const [taskType, setTaskType] = useState(0)
   const [rewardPerUser, setRewardPerUser] = useState('')
   const [maxParticipants, setMaxParticipants] = useState('')
+  const [formError, setFormError] = useState('')
 
   // Contract write
   const { writeContract } = useWriteContract()
@@ -42,13 +49,33 @@ export default function Home() {
   })
 
   const handleCreate = () => {
-    if (!tweetUrl || !rewardPerUser || !maxParticipants) return
-    
+    setFormError('')
+
+    if (!tweetUrl || !rewardPerUser || !maxParticipants) {
+      setFormError('All fields are required.')
+      return
+    }
+
+    if (!isValidTweetUrl(tweetUrl)) {
+      setFormError('Invalid tweet URL. Must be a valid x.com or twitter.com status link.')
+      return
+    }
+
+    const rewardNum = parseFloat(rewardPerUser)
+    const maxNum = parseInt(maxParticipants, 10)
+
+    if (isNaN(rewardNum) || rewardNum <= 0) {
+      setFormError('Reward must be a positive number.')
+      return
+    }
+
+    if (isNaN(maxNum) || maxNum <= 0 || maxNum > 10000) {
+      setFormError('Max participants must be between 1 and 10,000.')
+      return
+    }
+
     const reward = parseUnits(rewardPerUser, 6) // USDC 6 decimals
-    const max = BigInt(maxParticipants)
-    const totalReward = reward * max
-    const protocolFee = (totalReward * BigInt(10)) / BigInt(100)
-    const totalAmount = totalReward + protocolFee
+    const max = BigInt(maxNum)
 
     writeContract({
       address: contractAddress,
@@ -58,12 +85,21 @@ export default function Home() {
     })
   }
 
-  const handleClaim = (campaignId: number) => {
+  const handleClaim = async (campaignId: number) => {
+    // In production, fetch the signature from a backend verification service
+    // that confirms the user completed the task on Twitter/X
+    const response = await fetch(`/api/verify-claim?campaignId=${campaignId}&wallet=${address}`)
+    if (!response.ok) {
+      alert('Task verification failed. Complete the task first.')
+      return
+    }
+    const { signature } = await response.json()
+
     writeContract({
       address: contractAddress,
       abi: contractABI,
       functionName: 'claimReward',
-      args: [BigInt(campaignId)],
+      args: [BigInt(campaignId), signature as `0x${string}`],
     })
   }
 
@@ -198,6 +234,12 @@ export default function Home() {
                 </div>
               )}
               
+              {formError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                  {formError}
+                </div>
+              )}
+
               <button
                 onClick={handleCreate}
                 disabled={!isConnected}
