@@ -6,12 +6,13 @@ import { WagmiProvider } from 'wagmi'
 import { base, baseSepolia } from 'wagmi/chains'
 import { useState } from 'react'
 
-const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || ''
+const PLACEHOLDER_PROJECT_ID = 'YOUR_WALLETCONNECT_PROJECT_ID'
+const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || PLACEHOLDER_PROJECT_ID
 
-if (!walletConnectProjectId) {
+if (walletConnectProjectId === PLACEHOLDER_PROJECT_ID && typeof window !== 'undefined') {
   console.warn(
     '[FCFS] NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set. ' +
-    'Wallet connections will fail. Get a project ID at https://cloud.walletconnect.com'
+    'Wallet connections will not work. Get a project ID at https://cloud.walletconnect.com'
   )
 }
 
